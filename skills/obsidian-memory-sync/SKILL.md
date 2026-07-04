@@ -118,6 +118,11 @@ Conservative by default (when unsure, keep + rewrite rather than archive); `/mem
 aggressive` leans toward trimming. This is the **per-repo** synced memory — the global
 cross-repo memory is the `consolidate-memory` skill's domain; don't conflate them.
 
+If the vault is under git, suggest committing it before a compress run so the whole thing is
+revertable with one `git checkout`; `git diff` is also the cleanest way to review what changed.
+The tool itself stays git-agnostic (undo is `restore` + `push --force`); a sandboxed/iCloud
+vault may block git access anyway, so this is a user habit, not something to automate.
+
 ## Analyse / cross-link (on request, or after a sync with real changes)
 
 Judgment, not scripted. Glob the vault folder (and loosely, sibling notes one level up) for

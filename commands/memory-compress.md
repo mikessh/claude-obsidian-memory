@@ -3,7 +3,13 @@ description: Trim stale/irrelevant memory and rewrite terse fact notes into read
 argument-hint: "[aggressive]"
 ---
 
-Run the `obsidian-memory-sync` skill's **Compress** flow for the current repo:
+Run the `obsidian-memory-sync` skill's **Compress** flow for the current repo.
+
+> If the target vault is under git, suggest the user commit it first — compress rewrites and
+> archives notes, and a pre-compress commit makes the whole run revertable with one
+> `git checkout`. (Run git yourself only if you have vault access; on a sandboxed/iCloud vault
+> it may be blocked — then just remind the user.)
+
 
 1. Read every active fact note (`memory/*.md`, skip `_archive/`). For each, judge:
    - **Trim** → stale (superseded by a newer fact), one-off that won't recur, or no longer
