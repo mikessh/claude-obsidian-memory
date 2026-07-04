@@ -374,8 +374,9 @@ def regenerate_dashboard(repo, memory_dir, cfg):
     vdir.mkdir(parents=True, exist_ok=True)
     rel = vault_rel_folder(vdir)
 
-    # memory.base — ONE view (By type). No date math (that Bases syntax is
-    # version-sensitive; verify richer views in-app before adding). folder-scoped.
+    # memory.base — ONE view (By type). groupBy is an OBJECT (property+direction),
+    # not a string (verified against help.obsidian.md/bases/syntax). No date math
+    # or view-level sort (both version-sensitive); folder-scoped filter.
     base = (
         "filters:\n"
         "  and:\n"
@@ -384,14 +385,13 @@ def regenerate_dashboard(repo, memory_dir, cfg):
         "views:\n"
         "  - type: table\n"
         "    name: By type\n"
-        "    groupBy: note.type\n"
+        "    groupBy:\n"
+        "      property: note.type\n"
+        "      direction: ASC\n"
         "    order:\n"
         "      - file.name\n"
         "      - note.description\n"
         "      - note.last_synced\n"
-        "    sort:\n"
-        "      - property: note.last_synced\n"
-        "        direction: DESC\n"
     )
     (vdir / "memory.base").write_text(base)
 
