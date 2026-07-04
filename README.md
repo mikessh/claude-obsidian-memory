@@ -43,11 +43,20 @@ You can also just ask in natural language ("sync my memory to obsidian") — the
 /memory-link ~/vaults/personal/projects/myrepo
 ```
 
-Writes `.claude/obsidian-sync.json` in the repo (the association marker), creates the vault
-folder, and pushes two notes:
+Writes `.claude/obsidian-sync.json` in the repo (the association marker), creates a per-repo
+subfolder in the vault, and pushes **one note per fact** plus a generated org kit:
 
-- `<repo>-claude-memory.md` — every `MEMORY.md`-indexed fact-note, one `## ` section each.
-- `<repo>-CLAUDE.md` — a mirror of the repo's `CLAUDE.md`.
+```
+<vault-folder>/<repo>/
+  <slug>.md       one note per memory/<slug>.md, with queryable frontmatter
+  CLAUDE.md.md    mirror of the repo's CLAUDE.md
+  memory.base     Bases "By type" dashboard (core Obsidian ≥1.9, works on mobile)
+  MEMORY.md       dashboard: rollup + ![[memory.base]] + backlinks to every fact
+```
+
+One-note-per-fact (not one big note) is what lets Obsidian's core **Bases**, **Graph
+color-by-type**, **Backlinks**, and `["type":value]` **search** operate on the memory —
+see [INTEROP.md](INTEROP.md).
 
 ### Ongoing
 
@@ -58,18 +67,24 @@ you stay in control.
 ## How sync works
 
 `skills/obsidian-memory-sync/sync.py` (stdlib only) hashes each side against the last-synced
-state and classifies each note:
+state and classifies each fact note and the `CLAUDE.md` mirror:
 
-- **push** — repo changed, vault didn't → overwrite the vault note.
+- **push** — repo changed, vault didn't → write the vault note + regenerate the org kit.
 - **pull** — vault changed, repo didn't → write edits back into the memory files / `CLAUDE.md`.
-- **conflict** — both changed → **never auto-merged**; the skill shows a diff and asks you
-  which side wins, then forces it.
-- New `## ` sections you add in the vault note become new memory files on pull.
-- A `## ` section you *delete* in the vault is flagged (`removed_in_vault`) but never
-  auto-deleted — you're asked first.
+- **conflict** — both changed → **never auto-merged**; `sync.py` refuses (`SKIP`), the skill
+  shows a diff and asks which side wins, then `--force`s it.
+- A new `*.md` note you create in the vault folder becomes a new memory file on pull (and
+  gets a `MEMORY.md` index line).
+- A fact that disappears from one side is flagged (`removed`) but never auto-deleted.
 
-Frontmatter on each memory file (`name`, `description`, `metadata.type`) is preserved across
-round-trips; only the body is mirrored.
+The repo schema (`name` / `description` / `metadata.type`) is flattened into queryable vault
+frontmatter (`type`, `repo`, `created`, `last_synced`, `tags`) on push and re-nested on pull;
+bodies are copied verbatim.
+
+**Concurrency:** iCloud has no conflict resolution and desktop Obsidian silently overwrites
+an externally-changed note that's open in its editor. Treat the Mac/Claude side as the single
+writer and the phone as read-mostly; never run a second sync engine on the same vault folder.
+Core File Recovery + git are the safety nets. Details in [INTEROP.md](INTEROP.md).
 
 ## Files
 
