@@ -63,6 +63,9 @@ Returns per-fact and `claude_md` states:
 - `removed` — a previously-synced fact vanished from one side. Never auto-delete; ask,
   then remove the counterpart + its `MEMORY.md` line yourself if confirmed.
 
+When there are non-conflicting changes on *both* sides, `python3 <skill>/sync.py sync --repo
+<repo_root>` does push + pull in one call (conflicts still skipped and reported).
+
 ### Concurrency discipline (important — from the sync research)
 
 iCloud has **no** conflict resolution, and desktop Obsidian will **silently overwrite** an
@@ -107,8 +110,8 @@ script only provides the safe, reversible `archive` primitive; deciding *what* t
    same rule as the memory system's "never drop a capture".
 3. Apply: rewrite bodies in the repo `memory/*.md` files; for each trim run
    `python3 <skill>/sync.py archive --repo <repo_root> --only <slug>.md` (moves the file to
-   `memory/_archive/`, drops its `MEMORY.md` line, removes the vault mirror — reversible:
-   restore by moving it back out of `_archive/` and `push`). Then `push` to re-sync.
+   `memory/_archive/`, drops its `MEMORY.md` line, removes the vault mirror — fully reversible
+   with `sync.py restore --only <slug>.md`). Then `push` to re-sync.
 4. Update the vault `MEMORY.md` `## Rollup` prose to reflect the compacted state.
 
 Conservative by default (when unsure, keep + rewrite rather than archive); `/memory-compress

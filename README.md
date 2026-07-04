@@ -5,7 +5,7 @@ A Claude Code plugin that mirrors a repo's **Claude memory** — this session's 
 folder inside an **Obsidian vault**, two-way synced, so you can read, search, and organize
 that memory on your Mac and iPhone.
 
-Multiple repos can point at the same vault folder; note filenames are prefixed per repo.
+Multiple repos can point at the same vault folder; each gets its own subfolder.
 
 ## Why
 
@@ -17,14 +17,9 @@ phone and have the edits flow back.
 ## Install
 
 ```
-/plugin marketplace add ~/vcs/code/claude-obsidian-memory
+/plugin marketplace add mikessh/claude-obsidian-memory
 /plugin install claude-obsidian-memory
 ```
-
-(Or add the repo URL once it's pushed to a remote.)
-
-> If you were running the standalone `~/.claude/skills/obsidian-memory-sync/` prototype,
-> remove it after installing the plugin to avoid a duplicate skill name.
 
 ## Use
 
@@ -95,9 +90,14 @@ Core File Recovery + git are the safety nets. Details in [INTEROP.md](INTEROP.md
 skills/obsidian-memory-sync/      the skill (SKILL.md drives judgment; sync.py does mechanics)
 commands/memory-link.md           /memory-link
 commands/memory-sync.md           /memory-sync
+commands/memory-compress.md       /memory-compress
 hooks/hooks.json                  SessionStart link reminder
 scripts/session-check.py          the hook body (silent unless the repo is linked)
+INTEROP.md                        Obsidian feature/plugin recommendations (core Tier 1, opt-in Tier 2)
 ```
+
+`sync.py` subcommands: `init`, `status`, `push`, `pull`, `sync` (both directions at once),
+`archive` / `restore` (reversible trim, used by compress), `selftest`.
 
 ## Self-check
 
@@ -105,4 +105,5 @@ scripts/session-check.py          the hook body (silent unless the repo is linke
 python3 skills/obsidian-memory-sync/sync.py selftest
 ```
 
-Round-trips push → phone-edit → pull → new-section-pull in a scratch dir.
+Round-trips init → push → phone-edit → pull → new-vault-fact → conflict → force →
+archive → restore in a scratch dir.

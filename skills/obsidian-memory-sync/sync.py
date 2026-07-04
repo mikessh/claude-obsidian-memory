@@ -376,6 +376,14 @@ def cmd_pull(args):
     run_direction(args, "pull")
 
 
+def cmd_sync(args):
+    """Both directions in one call: push repo-side changes, then pull vault-side
+    changes. Conflicts are skipped (reported) in each pass, same as push/pull."""
+    args.only = None
+    run_direction(args, "push")
+    run_direction(args, "pull")
+
+
 def cmd_archive(args):
     """Reversibly trim a fact: move the repo file to memory/_archive/, drop its
     MEMORY.md line, remove the vault mirror, forget it in the marker. The archived
@@ -397,6 +405,27 @@ def cmd_archive(args):
     save_config(repo, cfg)
     regenerate_dashboard(repo, memory_dir, cfg)
     print(f"archived {slug} -> memory/_archive/{slug}; removed vault mirror")
+
+
+def cmd_restore(args):
+    """Undo an archive: move memory/_archive/<slug> back into active memory,
+    re-index it, and re-mirror to the vault."""
+    repo = Path(args.repo)
+    cfg = load_config(repo)
+    memory_dir = Path(args.memory) if args.memory else Path(cfg["memory_dir"])
+    slug = args.only
+    src = memory_dir / "_archive" / slug
+    if not src.exists():
+        sys.exit(f"no archived memory/_archive/{slug} to restore")
+    src.rename(memory_dir / slug)
+    f = parse_repo_fact((memory_dir / slug).read_text(), slug[:-3])
+    if slug not in index_files(memory_dir):
+        append_index(memory_dir, f["description"] or f["name"], slug, "restored from archive")
+    items = gather(repo, memory_dir, cfg)
+    do_push(repo, memory_dir, cfg, slug, items[slug])
+    regenerate_dashboard(repo, memory_dir, cfg)
+    save_config(repo, cfg)
+    print(f"restored {slug} from archive and re-synced")
 
 
 # --- generated dashboard: memory.base + MEMORY.md rollup ----------------------
@@ -529,11 +558,25 @@ def selftest():
         # archive (compress) — reversible trim
         a.only = "orphan.md"
         cmd_archive(a)
-        a.only = None
         assert not (memory / "orphan.md").exists(), "archived file left active memory"
         assert (memory / "_archive" / "orphan.md").exists(), "archived copy preserved"
         assert not (vdir / "orphan.md").exists(), "vault mirror removed on archive"
         assert "orphan.md" not in load_config(repo)["facts"], "marker forgot archived fact"
+
+        # restore — undo the archive
+        cmd_restore(a)
+        a.only = None
+        assert (memory / "orphan.md").exists(), "restored file back in active memory"
+        assert not (memory / "_archive" / "orphan.md").exists(), "archive copy moved out"
+        assert (vdir / "orphan.md").exists(), "vault mirror re-created on restore"
+        assert "orphan.md" in load_config(repo)["facts"], "marker knows restored fact"
+
+        # sync (both directions) — leaves everything no_change afterward
+        cmd_sync(a)
+        st = {**gather(repo, memory, load_config(repo))}
+        for k, it in st.items():
+            assert classify(it["repo_body"], it["vault_body"], it["rec"]) in ("no_change", "init"), \
+                f"{k} not settled after sync"
 
         print("selftest OK")
     finally:
@@ -563,11 +606,18 @@ def main():
         sp.add_argument("--force", action="store_true")
         sp.set_defaults(func=fn)
 
-    sp = sub.add_parser("archive")
+    sp = sub.add_parser("sync")
     sp.add_argument("--repo", required=True)
     sp.add_argument("--memory")
-    sp.add_argument("--only", required=True, help="fact filename to archive, e.g. foo.md")
-    sp.set_defaults(func=cmd_archive)
+    sp.add_argument("--force", action="store_true")
+    sp.set_defaults(func=cmd_sync)
+
+    for name, fn in (("archive", cmd_archive), ("restore", cmd_restore)):
+        sp = sub.add_parser(name)
+        sp.add_argument("--repo", required=True)
+        sp.add_argument("--memory")
+        sp.add_argument("--only", required=True, help="fact filename, e.g. foo.md")
+        sp.set_defaults(func=fn)
 
     sub.add_parser("selftest").set_defaults(func=lambda args: selftest())
     args = p.parse_args()
