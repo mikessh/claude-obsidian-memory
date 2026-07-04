@@ -1,0 +1,9 @@
+{
+  "name": "claude-obsidian-memory",
+  "version": "0.1.0",
+  "description": "Mirror a repo's Claude Code memory (MEMORY.md + memory/*.md + CLAUDE.md) into an Obsidian vault folder, two-way synced, with cross-linking and a core-Obsidian org kit (Base + dashboard).",
+  "author": {
+    "name": "Mikhail Shugay"
+  },
+  "keywords": ["obsidian", "memory", "sync", "notes", "knowledge-management"]
+}
