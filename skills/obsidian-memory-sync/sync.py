@@ -192,6 +192,15 @@ def append_index(memory_dir, title, fname, hook="added via vault sync"):
     path.write_text("\n".join(lines) + "\n")
 
 
+def remove_index_line(memory_dir, fname):
+    path = memory_dir / "MEMORY.md"
+    if not path.exists():
+        return
+    kept = [l for l in path.read_text().splitlines()
+            if not ((m := INDEX_RE.match(l)) and m.group("file") == fname)]
+    path.write_text("\n".join(kept) + ("\n" if kept else ""))
+
+
 # --- state classification -----------------------------------------------------
 
 def classify(repo_body, vault_body, rec):
@@ -367,6 +376,29 @@ def cmd_pull(args):
     run_direction(args, "pull")
 
 
+def cmd_archive(args):
+    """Reversibly trim a fact: move the repo file to memory/_archive/, drop its
+    MEMORY.md line, remove the vault mirror, forget it in the marker. The archived
+    copy is preserved (restore = move it back out of _archive/ and push). Used by
+    the compress flow; the judgment of WHAT to archive is the skill's, not this."""
+    repo = Path(args.repo)
+    cfg = load_config(repo)
+    memory_dir = Path(args.memory) if args.memory else Path(cfg["memory_dir"])
+    slug = args.only
+    src = memory_dir / slug
+    if src.exists():
+        (memory_dir / "_archive").mkdir(exist_ok=True)
+        src.rename(memory_dir / "_archive" / slug)  # non-recursive glob won't remirror it
+    remove_index_line(memory_dir, slug)
+    vpath = vault_repo_dir(cfg) / slug
+    if vpath.exists():
+        vpath.unlink()
+    cfg["facts"].pop(slug, None)
+    save_config(repo, cfg)
+    regenerate_dashboard(repo, memory_dir, cfg)
+    print(f"archived {slug} -> memory/_archive/{slug}; removed vault mirror")
+
+
 # --- generated dashboard: memory.base + MEMORY.md rollup ----------------------
 
 def regenerate_dashboard(repo, memory_dir, cfg):
@@ -494,6 +526,15 @@ def selftest():
         a.force = False
         assert "Repo side." in (vdir / "user_role.md").read_text(), "force push wins"
 
+        # archive (compress) — reversible trim
+        a.only = "orphan.md"
+        cmd_archive(a)
+        a.only = None
+        assert not (memory / "orphan.md").exists(), "archived file left active memory"
+        assert (memory / "_archive" / "orphan.md").exists(), "archived copy preserved"
+        assert not (vdir / "orphan.md").exists(), "vault mirror removed on archive"
+        assert "orphan.md" not in load_config(repo)["facts"], "marker forgot archived fact"
+
         print("selftest OK")
     finally:
         shutil.rmtree(tmp)
@@ -521,6 +562,12 @@ def main():
         sp.add_argument("--only", help="a single fact filename (e.g. foo.md) or 'claude_md'")
         sp.add_argument("--force", action="store_true")
         sp.set_defaults(func=fn)
+
+    sp = sub.add_parser("archive")
+    sp.add_argument("--repo", required=True)
+    sp.add_argument("--memory")
+    sp.add_argument("--only", required=True, help="fact filename to archive, e.g. foo.md")
+    sp.set_defaults(func=cmd_archive)
 
     sub.add_parser("selftest").set_defaults(func=lambda args: selftest())
     args = p.parse_args()

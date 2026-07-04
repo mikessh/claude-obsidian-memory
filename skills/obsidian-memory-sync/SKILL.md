@@ -90,6 +90,31 @@ summary, write a short prose rollup **into the `## Rollup` section of the vault 
 (or a `## Summary` you add): counts per type, the few most important facts, per-repo
 one-liners. That covers "summarize" with zero plugins and nothing leaving the device.
 
+## Compress (trim old/irrelevant memory + make it readable)
+
+For "compress", "trim memory", "clean up the notes", or `/memory-compress`. Judgment — the
+script only provides the safe, reversible `archive` primitive; deciding *what* to trim and
+*how* to rewrite is yours.
+
+1. Read every active fact note (`memory/*.md`, skip `_archive/`). Classify each:
+   - **Trim** — superseded by a newer fact, a one-off that won't recur, or no longer true.
+     Dates (`created`/`last_synced`) are a hint, not a rule; recency ≠ relevance.
+   - **Merge** — two notes that are really one fact → combine into one, archive the other.
+   - **Rewrite** — terse agent-shorthand → clean prose: a one-sentence summary line, then
+     short readable paragraphs. Preserve **every** real fact and every `[[link]]` — compress
+     phrasing, never information.
+2. **Show the user the whole proposal and confirm before applying.** Never archive silently —
+   same rule as the memory system's "never drop a capture".
+3. Apply: rewrite bodies in the repo `memory/*.md` files; for each trim run
+   `python3 <skill>/sync.py archive --repo <repo_root> --only <slug>.md` (moves the file to
+   `memory/_archive/`, drops its `MEMORY.md` line, removes the vault mirror — reversible:
+   restore by moving it back out of `_archive/` and `push`). Then `push` to re-sync.
+4. Update the vault `MEMORY.md` `## Rollup` prose to reflect the compacted state.
+
+Conservative by default (when unsure, keep + rewrite rather than archive); `/memory-compress
+aggressive` leans toward trimming. This is the **per-repo** synced memory — the global
+cross-repo memory is the `consolidate-memory` skill's domain; don't conflate them.
+
 ## Analyse / cross-link (on request, or after a sync with real changes)
 
 Judgment, not scripted. Glob the vault folder (and loosely, sibling notes one level up) for

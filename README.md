@@ -33,6 +33,7 @@ phone and have the edits flow back.
 | `/memory-link <vault-folder>` | Associate this repo with a vault folder and do the first sync. |
 | `/memory-sync` | Reconcile changes (status → push/pull, conflict prompts). |
 | `/memory-sync analyse` | Same, then cross-link the mirror notes to related vault notes. |
+| `/memory-compress` | Trim stale/irrelevant facts (reversibly, to `memory/_archive/`) and rewrite terse notes into readable prose, then re-sync. |
 
 You can also just ask in natural language ("sync my memory to obsidian") — the
 `obsidian-memory-sync` skill triggers on that.
