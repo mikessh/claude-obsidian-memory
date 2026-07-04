@@ -213,7 +213,10 @@ def gather(repo, memory_dir, cfg):
     vdir = vault_repo_dir(cfg)
     items = {}
 
+    # every real fact file is a sync unit — indexed or not (don't silently drop
+    # an un-indexed memory file), plus any note created on the vault side.
     keys = set(index_files(memory_dir))
+    keys |= {p.name for p in memory_dir.glob("*.md") if p.name != "MEMORY.md"}
     if vdir.exists():
         for vf in vdir.glob("*.md"):
             if vf.name in ("MEMORY.md", cfg["claude_md"]["vault_file"]):
@@ -451,7 +454,12 @@ def selftest():
         cfg = load_config(repo)
         vdir = vault / cfg["repo_subdir"]
 
+        # an un-indexed fact file must still be mirrored (no silent drop)
+        (memory / "orphan.md").write_text(
+            "---\nname: orphan\ndescription: not in the index\nmetadata:\n  type: project\n---\n\nOrphan body.\n")
+
         cmd_push(a)
+        assert (vdir / "orphan.md").exists(), "un-indexed memory file still mirrored"
         vf = vdir / "user_role.md"
         text = vf.read_text()
         assert "type: user" in text and "repo: repo" in text, "vault frontmatter enriched"
