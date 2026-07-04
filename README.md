@@ -1,5 +1,9 @@
 # claude-obsidian-memory
 
+<p align="center">
+  <img src="assets/logo.png" alt="Claude Shannon with Obsidian-gem eyes" width="480">
+</p>
+
 A Claude Code plugin that mirrors a repo's **Claude memory** — this session's private
 `MEMORY.md` + `memory/*.md` fact-notes, plus the repo's committed `CLAUDE.md` — into a
 folder inside an **Obsidian vault**, two-way synced, so you can read, search, and organize
