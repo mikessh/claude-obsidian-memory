@@ -129,6 +129,14 @@ def norm_claude_vault(text):
     return re.sub(r"(?m)^> \[!note\].*\n?\n?", "", body).strip()
 
 
+def fact_canon(f):
+    """Canonical content of a fact for change-detection: the fields that round-trip
+    both ways (name/description/type/body) — NOT the vault-only dates, which change
+    every push. So editing a note's description or type is detected, not just its body."""
+    return "\n".join([f.get("name", ""), f.get("description", ""),
+                      f.get("type", ""), f.get("body", "").strip()])
+
+
 # --- config -------------------------------------------------------------------
 
 def load_config(repo):
@@ -234,8 +242,8 @@ def gather(repo, memory_dir, cfg):
     for fname in sorted(keys):
         rpath = memory_dir / fname
         vpath = vdir / fname
-        repo_body = parse_repo_fact(rpath.read_text(), fname[:-3])["body"] if rpath.exists() else ""
-        vault_body = parse_vault_fact(vpath.read_text(), fname[:-3])["body"] if vpath.exists() else ""
+        repo_body = fact_canon(parse_repo_fact(rpath.read_text(), fname[:-3])) if rpath.exists() else ""
+        vault_body = fact_canon(parse_vault_fact(vpath.read_text(), fname[:-3])) if vpath.exists() else ""
         items[fname] = {
             "kind": "fact", "repo_path": rpath, "vault_path": vpath,
             "repo_body": repo_body, "vault_body": vault_body,
@@ -315,7 +323,7 @@ def do_push(repo, memory_dir, cfg, key, it):
         created = parse_vault_fact(it["vault_path"].read_text(), key[:-3]).get("created") or created
     it["vault_path"].parent.mkdir(parents=True, exist_ok=True)
     it["vault_path"].write_text(build_vault_fact(f, cfg["repo_subdir"], created, date.today().isoformat()))
-    h = sha(f["body"])
+    h = sha(fact_canon(f))
     cfg["facts"].setdefault(key, {})
     cfg["facts"][key].update(last_hash_repo=h, last_hash_vault=h)
 
@@ -334,7 +342,7 @@ def do_pull(repo, memory_dir, cfg, key, it):
     it["repo_path"].write_text(build_repo_fact(v))
     if is_new and key not in index_files(memory_dir):
         append_index(memory_dir, v["description"] or v["name"], key)
-    h = sha(v["body"])
+    h = sha(fact_canon(v))
     cfg["facts"].setdefault(key, {})
     cfg["facts"][key].update(last_hash_repo=h, last_hash_vault=h)
 
@@ -577,6 +585,16 @@ def selftest():
         for k, it in st.items():
             assert classify(it["repo_body"], it["vault_body"], it["rec"]) in ("no_change", "init"), \
                 f"{k} not settled after sync"
+
+        # frontmatter-only edit (description) must be detected — used to hash body only
+        ur = memory / "user_role.md"
+        ur.write_text(ur.read_text().replace("description: User is a tester",
+                                             "description: User is a QA tester"))
+        rec = gather(repo, memory, load_config(repo))["user_role.md"]
+        assert classify(rec["repo_body"], rec["vault_body"], rec["rec"]) == "push", \
+            "frontmatter-only (description) change detected"
+        cmd_push(a)
+        assert "QA tester" in (vdir / "user_role.md").read_text(), "description edit reached vault"
 
         print("selftest OK")
     finally:

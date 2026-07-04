@@ -99,6 +99,11 @@ INTEROP.md                        Obsidian feature/plugin recommendations (core 
 `sync.py` subcommands: `init`, `status`, `push`, `pull`, `sync` (both directions at once),
 `archive` / `restore` (reversible trim, used by compress), `selftest`.
 
+> **Upgrading `sync.py`:** if a new version changes how content is hashed, every note will
+> read as `conflict` once (old baseline vs new hash). Re-baseline with a single
+> `push --force` (repo authoritative) or `pull --force` (vault authoritative) — pick the side
+> whose current content is correct.
+
 ## Self-check
 
 ```
