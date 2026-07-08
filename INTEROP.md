@@ -15,9 +15,9 @@ hand; the notes stay plain, readable markdown without any of it.
 |---|---|---|---|
 | **Bases** (`memory.base`) | core ≥1.9 | yes | Live table grouped by `type` (user/feedback/project/reference). The primary dashboard. Generated on every push. |
 | **Frontmatter Properties** | core | yes | `type`, `repo`, `created`, `last_synced`, `tags` on every fact note — the schema every view below reads. Generated. |
-| **Core Search** | core | yes | `path:` + `["type":value]` + `tag:#repo/<slug>` filter facts precisely. Embed a `` ```query `` block in a note for a live saved search. |
+| **Core Search** | core | yes | `path:` + `[type:value]` + `tag:#repo/<repo>` filter facts precisely. Embed a `` ```query `` block in a note for a live saved search. |
 | **Backlinks / Outgoing Links panes** | core | yes | The daily-driver "what references this fact" view on mobile — more legible than the graph on a phone. Works because facts carry `[[wikilinks]]`. |
-| **Tags pane** | core | yes | `#repo/<slug>` + `#memory` give a zero-setup per-repo index. Generated into each note. |
+| **Tags pane** | core | yes | `#repo/<repo>` + `#memory` give a zero-setup per-repo index. Generated into each note. |
 | **Graph view** | core | yes | See fact clusters. Optionally add color-groups by `["type":user]` etc. (marginal — the Bases "By type" view already does this more legibly, so it's a one-time nicety, not a must). |
 | **File Recovery** | core | yes | Per-device snapshot history — the recovery net if a sync clobbers a note. Enable it. |
 

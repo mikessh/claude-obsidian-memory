@@ -23,13 +23,13 @@ The memory is mirrored **per fact**, not as one blob, so Obsidian's core feature
   <slug>.md       one note per memory/<slug>.md, with queryable frontmatter
   CLAUDE.md.md    mirror of the repo's CLAUDE.md
   memory.base     generated Bases dashboard (core, mobile) — "By type" view
-  MEMORY.md       generated dashboard: rollup + ![[memory.base]] + backlinks
+  MEMORY.md       generated dashboard: rollup + ![[memory.base]] + outgoing links
 ```
 
 `sync.py` flattens the repo schema (`name`/`description`/`metadata.type`) into vault
-frontmatter (`type`, `repo`, `created`, `last_synced`, `tags: [memory, repo/<slug>]`) on
+frontmatter (`type`, `repo`, `created`, `last_synced`, `tags: [memory, repo/<repo>]`) on
 push and re-nests it on pull. Bodies are copied verbatim. This frontmatter is load-bearing:
-Bases `groupBy`, core `["type":value]` search, and Graph color-groups all read it.
+Bases `groupBy`, core `[type:value]` search, and Graph color-groups all read it.
 
 ## Associate (first time for this repo)
 
@@ -41,7 +41,8 @@ python3 <skill>/sync.py push --repo <repo_root>
 ```
 
 `init` writes `<repo_root>/.claude/obsidian-sync.json` (the association marker: vault path,
-per-repo subdir, memory dir, per-fact sync hashes). `push` populates the vault folder and
+per-repo subdir, memory dir, `hash_scheme`, per-fact sync hashes). It **refuses to overwrite**
+an existing marker unless you pass `--force` (which drops every recorded hash). `push` populates the vault folder and
 generates `memory.base` + `MEMORY.md`. If the repo is under git, ensure
 `.claude/obsidian-sync.json` is gitignored (it holds a machine-local absolute path).
 
@@ -62,6 +63,13 @@ Returns per-fact and `claude_md` states:
   then `push --force` / `pull --force` (optionally `--only`).
 - `removed` — a previously-synced fact vanished from one side. Never auto-delete; ask,
   then remove the counterpart + its `MEMORY.md` line yourself if confirmed.
+- `not_in_index` / `indexed_but_missing` — `MEMORY.md` drifted from the files on disk. The
+  fact still syncs (files are the truth); fix the index line.
+- `hash_scheme_mismatch` — the marker was written by a different `sync.py`. It refuses to
+  run rather than report every fact as a conflict; re-baseline once with `push --force`
+  (repo authoritative) or `pull --force` (vault authoritative).
+
+`--only` **narrows** scope to one fact; only `--force` overrides the direction guard.
 
 When there are non-conflicting changes on *both* sides, `python3 <skill>/sync.py sync --repo
 <repo_root>` does push + pull in one call (conflicts still skipped and reported).
@@ -80,7 +88,7 @@ external write to a note that's currently **open in its editor**. So:
 ## Organize (core Obsidian — auto-generated, no plugins)
 
 `push` already writes the mobile-safe org kit: the `memory.base` (a Bases "By type" table,
-core since Obsidian 1.9) and the `MEMORY.md` dashboard that embeds it and lists backlinks.
+core since Obsidian 1.9) and the `MEMORY.md` dashboard that embeds it and links out to every fact.
 Caveat: **Bases YAML syntax is version-sensitive** — if the embedded view is empty, open
 `memory.base` in the app and adjust the `file.inFolder(...)` filter; the dashboard note says
 so. Only add extra views (by repo, recently-synced) after verifying syntax on the live app —
@@ -111,7 +119,7 @@ script only provides the safe, reversible `archive` primitive; deciding *what* t
 3. Apply: rewrite bodies in the repo `memory/*.md` files; for each trim run
    `python3 <skill>/sync.py archive --repo <repo_root> --only <slug>.md` (moves the file to
    `memory/_archive/`, drops its `MEMORY.md` line, removes the vault mirror — fully reversible
-   with `sync.py restore --only <slug>.md`). Then `push` to re-sync.
+   with `sync.py restore --repo <repo_root> --only <slug>.md`). Then `push` to re-sync.
 4. Update the vault `MEMORY.md` `## Rollup` prose to reflect the compacted state.
 
 Conservative by default (when unsure, keep + rewrite rather than archive); `/memory-compress
@@ -137,5 +145,7 @@ iOS) — it degrades gracefully (notes stay plain markdown without it). Everythi
 
 ## Self-check
 
-`python3 <skill>/sync.py selftest` round-trips init → push → phone-edit → pull →
-new-vault-fact → conflict → force in a scratch dir. Re-run after editing `sync.py`.
+`python3 <skill>/sync.py selftest` round-trips the whole surface in a scratch dir —
+init → push → pull → `--only` scoping → conflict → force → archive → restore → sync — and
+asserts sibling-metadata preservation, YAML-scalar round-tripping, and the hash-scheme guard.
+Re-run after editing `sync.py`.

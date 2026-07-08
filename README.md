@@ -40,7 +40,7 @@ You can also just ask in natural language ("sync my memory to obsidian") — the
 ### First-run
 
 ```
-/memory-link ~/vaults/personal/projects/myrepo
+/memory-link ~/vaults/personal/projects
 ```
 
 Writes `.claude/obsidian-sync.json` in the repo (the association marker), creates a per-repo
@@ -51,11 +51,11 @@ subfolder in the vault, and pushes **one note per fact** plus a generated org ki
   <slug>.md       one note per memory/<slug>.md, with queryable frontmatter
   CLAUDE.md.md    mirror of the repo's CLAUDE.md
   memory.base     Bases "By type" dashboard (core Obsidian ≥1.9, works on mobile)
-  MEMORY.md       dashboard: rollup + ![[memory.base]] + backlinks to every fact
+  MEMORY.md       dashboard: rollup + ![[memory.base]] + a wikilink to every fact (populating each fact’s Backlinks pane)
 ```
 
 One-note-per-fact (not one big note) is what lets Obsidian's core **Bases**, **Graph
-color-by-type**, **Backlinks**, and `["type":value]` **search** operate on the memory —
+color-by-type**, **Backlinks**, and `[type:value]` **search** operate on the memory —
 see [INTEROP.md](INTEROP.md).
 
 ### Ongoing
@@ -103,10 +103,10 @@ INTEROP.md                        Obsidian feature/plugin recommendations (core 
 `sync.py` subcommands: `init`, `status`, `push`, `pull`, `sync` (both directions at once),
 `archive` / `restore` (reversible trim, used by compress), `selftest`.
 
-> **Upgrading `sync.py`:** if a new version changes how content is hashed, every note will
-> read as `conflict` once (old baseline vs new hash). Re-baseline with a single
-> `push --force` (repo authoritative) or `pull --force` (vault authoritative) — pick the side
-> whose current content is correct.
+> **Upgrading `sync.py`:** the marker records a `hash_scheme`. If a new version changes how
+> content is hashed, `sync.py` **refuses to run** and tells you to re-baseline once — rather
+> than silently reporting every note as a conflict. Re-baseline with `push --force` (repo
+> authoritative) or `pull --force` (vault authoritative); pick the side whose content is right.
 
 ## Self-check
 
@@ -114,5 +114,6 @@ INTEROP.md                        Obsidian feature/plugin recommendations (core 
 python3 skills/obsidian-memory-sync/sync.py selftest
 ```
 
-Round-trips init → push → phone-edit → pull → new-vault-fact → conflict → force →
-archive → restore in a scratch dir.
+Round-trips init → push → phone-edit → pull → new-vault-fact → `--only` scoping → conflict →
+force → archive → restore → sync-settles, and asserts metadata preservation, YAML-scalar
+round-tripping, the hash-scheme guard, and that `--force` invents no CLAUDE.md mirror.

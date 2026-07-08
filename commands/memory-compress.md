@@ -19,7 +19,7 @@ Run the `obsidian-memory-sync` skill's **Compress** flow for the current repo.
      short readable paragraphs). Preserve **every** real fact and every `[[link]]`.
 2. Show the user the full proposal (archive list, merges, rewrites) and get confirmation
    BEFORE applying anything. Never archive silently.
-3. Apply: rewrite bodies in the repo memory files; `sync.py archive --only <slug>.md` for
+3. Apply: rewrite bodies in the repo memory files; `sync.py archive --repo <repo_root> --only <slug>.md` for
    each trim (reversible — moves to `memory/_archive/`); then `push` to re-sync.
 4. Update the prose `## Rollup` in the vault `MEMORY.md` to reflect the compacted state.
 
