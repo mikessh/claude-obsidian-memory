@@ -41,10 +41,11 @@ python3 <skill>/sync.py push --repo <repo_root>
 ```
 
 `init` writes `<repo_root>/.claude/obsidian-sync.json` (the association marker: vault path,
-per-repo subdir, memory dir, `hash_scheme`, per-fact sync hashes). It **refuses to overwrite**
-an existing marker unless you pass `--force` (which drops every recorded hash). `push` populates the vault folder and
-generates `memory.base` + `MEMORY.md`. If the repo is under git, ensure
-`.claude/obsidian-sync.json` is gitignored (it holds a machine-local absolute path).
+per-repo subdir, memory dir, `hash_scheme`, per-fact sync hashes), **auto-gitignores it** (it
+holds a machine-local absolute path), and **refuses to overwrite** an existing marker unless
+you pass `--force` (which drops every recorded hash). `push` populates the vault folder and
+generates `memory.base` + `MEMORY.md`. Then run `sync.py doctor --repo <repo_root>` to confirm
+the vault is reachable (Full Disk Access) and the association is healthy.
 
 ## Sync (every subsequent invocation)
 
@@ -142,6 +143,24 @@ If the user wants *semantic* cross-linking beyond string matches, the one commun
 worth recommending is **Smart Connections** (local, keyless, on-device embeddings, runs on
 iOS) — it degrades gracefully (notes stay plain markdown without it). Everything else
 (Templater, Copilot, Omnisearch) is optional desktop polish; don't push it.
+
+## Troubleshooting — `sync.py doctor`
+
+When a sync misbehaves, run `python3 <skill>/sync.py doctor --repo <repo_root>` first. It's a
+read-only health check (it does perform the one safe recurring repair — gitignoring the
+marker; pass `--no-fix` to skip) that reports every failure mode this plugin has hit, each
+with its fix:
+
+- **vault access — FAIL**: the vault is on iCloud and macOS **Full Disk Access** isn't granted
+  to your terminal app. Grant it in *System Settings ▸ Privacy & Security ▸ Full Disk Access*,
+  then restart the app. Until then the vault is unreadable and no sync can run — `sync.py`
+  exits with this message rather than mis-classifying every note.
+- **hash scheme — FAIL**: the marker was written by a different `sync.py` (e.g. a stale
+  installed plugin cache). Re-baseline once: `push --force` (repo wins) or `pull --force`
+  (vault wins). If the *installed* plugin is stale, `/plugin update claude-obsidian-memory`.
+- **gitignore — WARN/auto-fixed**: the marker must never be committed.
+- **memory dir — WARN**: `MEMORY.md` drifted from the files on disk (a fact isn't indexed, or
+  an index line points at a missing file). Sync still works (files are the truth); fix the index.
 
 ## Self-check
 

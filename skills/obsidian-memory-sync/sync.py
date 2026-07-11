@@ -27,8 +27,13 @@ File Recovery + git are the safety nets.
 The marker records `hash_scheme`; a marker written by a different scheme is refused
 with instructions rather than silently reporting every fact as a conflict.
 
+`init` auto-gitignores the marker (it holds a machine-local path). `doctor` health-checks
+an association and reports every recurring failure mode (Full Disk Access block, stale
+hash scheme, index drift, un-gitignored marker) with its fix.
+
 Usage:
   sync.py init    --repo DIR --memory DIR --vault DIR [--force]
+  sync.py doctor  --repo DIR [--memory DIR] [--no-fix]
   sync.py status  --repo DIR [--memory DIR]
   sync.py push    --repo DIR [--memory DIR] [--only SLUG|claude_md] [--force]
   sync.py pull    --repo DIR [--memory DIR] [--only SLUG|claude_md] [--force]
@@ -256,6 +261,46 @@ def repo_slug(repo):
     return slugify(repo.resolve().name)
 
 
+def ensure_gitignored(repo):
+    """The marker holds a machine-local absolute vault path, so it must not be
+    committed. If `repo` is a git repo and the marker isn't already ignored, append
+    it to .gitignore. Idempotent. Returns a short human status."""
+    if not (repo / ".git").exists():
+        return "repo is not under git — nothing to gitignore"
+    import subprocess
+    try:
+        r = subprocess.run(["git", "check-ignore", "-q", str(CONFIG_REL)],
+                           cwd=str(repo), capture_output=True, timeout=10)
+        if r.returncode == 0:
+            return "marker already gitignored"
+    except (OSError, subprocess.SubprocessError):
+        pass  # git unavailable — fall back to editing .gitignore directly
+    gi = repo / ".gitignore"
+    existing = gi.read_text() if gi.exists() else ""
+    if str(CONFIG_REL) in existing.splitlines():
+        return "marker already in .gitignore"
+    with gi.open("a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(f"\n# Claude <-> Obsidian memory sync marker (machine-local absolute paths)\n{CONFIG_REL}\n")
+    return "added marker to .gitignore"
+
+
+def vault_readable(vault_dir):
+    """Probe whether the vault is reachable. Returns (ok, reason). Never raises."""
+    try:
+        d = Path(vault_dir)
+        if not d.exists():
+            return False, "vault_dir does not exist"
+        list(d.iterdir())          # the operation macOS TCC actually blocks
+        return True, "readable"
+    except PermissionError:
+        return False, ("blocked by macOS Full Disk Access — grant it to your terminal app in "
+                       "System Settings ▸ Privacy & Security ▸ Full Disk Access, then restart it")
+    except OSError as e:
+        return False, str(e)
+
+
 def vault_repo_dir(cfg):
     return Path(cfg["vault_dir"]) / cfg["repo_subdir"]
 
@@ -389,7 +434,9 @@ def cmd_init(args):
         "claude_md": {"vault_file": "CLAUDE.md.md", "last_hash_repo": "", "last_hash_vault": ""},
         "facts": {},
     })
-    print(json.dumps({"config": str(repo / CONFIG_REL), "vault_repo_dir": str(vault / slug)}))
+    gi = ensure_gitignored(repo)   # the chore I kept forgetting — now automatic
+    print(json.dumps({"config": str(repo / CONFIG_REL), "vault_repo_dir": str(vault / slug),
+                      "gitignore": gi}))
 
 
 def cmd_status(args):
@@ -420,6 +467,58 @@ def cmd_status(args):
         out["hash_scheme_mismatch"] = {"marker": cfg["_scheme_mismatch"], "expected": HASH_SCHEME,
                                        "remedy": "push --force (repo wins) or pull --force (vault wins)"}
     print(json.dumps(out, indent=2))
+
+
+def cmd_doctor(args):
+    """Health-check an association, reporting every recurring failure mode with its
+    fix. Read-only except for the one safe, repeatedly-needed repair: gitignoring
+    the marker (skip with --no-fix)."""
+    repo = Path(args.repo)
+    cfg = load_config(repo, require_scheme=False)
+    memory_dir = Path(args.memory) if args.memory else Path(cfg["memory_dir"])
+    checks = []
+
+    def add(ok, name, detail):
+        checks.append(("PASS" if ok else ("WARN" if ok is None else "FAIL"), name, detail))
+
+    add(True, "marker", f"{repo / CONFIG_REL} (linked {cfg.get('linked_at','?')}, "
+                        f"subdir {cfg['repo_subdir']})")
+
+    if "_scheme_mismatch" in cfg:
+        add(False, "hash scheme", f"marker is scheme {cfg['_scheme_mismatch']}, sync.py is "
+            f"{HASH_SCHEME} → every fact would look like a conflict. Re-baseline once: "
+            f"`push --force` (repo wins) or `pull --force` (vault wins).")
+    else:
+        add(True, "hash scheme", f"v{HASH_SCHEME}")
+
+    if memory_dir.exists():
+        files = {p.name for p in memory_dir.glob("*.md") if p.name != "MEMORY.md"}
+        idx = index_files(memory_dir)
+        drift = (files - idx) | (idx - files)
+        add(None if drift else True, "memory dir",
+            f"{len(files)} fact files at {memory_dir}" +
+            (f"; INDEX DRIFT: {sorted(drift)} (run `status`, fix MEMORY.md)" if drift else ""))
+    else:
+        add(False, "memory dir", f"{memory_dir} does not exist")
+
+    if (repo / ".git").exists():
+        gi = ensure_gitignored(repo) if getattr(args, "fix", True) else "check .gitignore manually"
+        add("already" in gi or "added" in gi, "gitignore",
+            f"{gi} (marker holds a machine-local absolute path)")
+    else:
+        add(None, "gitignore", "repo not under git — marker won't be committed anyway")
+
+    ok, reason = vault_readable(cfg["vault_dir"])
+    add(ok, "vault access", f"{cfg['vault_dir']} — {reason}")
+    if ok and vault_root(cfg["vault_dir"]) is None:
+        add(None, "vault root", "no .obsidian found up-tree — the Bases filter may use the wrong path")
+
+    width = max(len(n) for _s, n, _d in checks)
+    print(f"obsidian-memory doctor — {repo.name}")
+    for status, name, detail in checks:
+        print(f"  [{status:4}] {name.ljust(width)}  {detail}")
+    if any(s == "FAIL" for s, _n, _d in checks):
+        sys.exit(1)
 
 
 def do_push(repo, memory_dir, cfg, key, it):
@@ -793,6 +892,28 @@ def selftest():
         assert not (vault2 / cfg2["repo_subdir"] / "CLAUDE.md.md").exists(), "no junk CLAUDE.md.md on --force"
         assert not cfg2["claude_md"]["last_hash_repo"], "no phantom claude_md hash"
 
+        # init auto-gitignores the marker in a git repo (the recurring chore)
+        repo3, memory3, vault3, a3 = mkrepo("gitrepo")
+        (repo3 / ".git").mkdir()
+        with quiet(): cmd_init(a3)
+        assert str(CONFIG_REL) in (repo3 / ".gitignore").read_text(), "marker auto-gitignored"
+        assert ensure_gitignored(repo3).startswith("marker already"), "gitignore is idempotent"
+
+        # doctor: readable vault passes; a permission-blocked vault fails with FDA guidance
+        a3.fix = True
+        with quiet(): cmd_doctor(a3)   # readable fake vault -> no FAIL, no SystemExit
+        cfg3 = load_config(repo3)
+        ok, reason = vault_readable(cfg3["vault_dir"])
+        assert ok, "fake vault is readable"
+        # simulate the TCC block on a dir we can't list
+        blocked = tmp / "blocked"
+        blocked.mkdir(); blocked.chmod(0o000)
+        try:
+            bok, breason = vault_readable(blocked)
+            assert not bok and "Full Disk Access" in breason, "TCC block reported with FDA fix"
+        finally:
+            blocked.chmod(0o755)
+
         print("selftest OK")
     finally:
         shutil.rmtree(tmp)
@@ -813,6 +934,13 @@ def main():
     sp.add_argument("--repo", required=True)
     sp.add_argument("--memory")
     sp.set_defaults(func=cmd_status)
+
+    sp = sub.add_parser("doctor")
+    sp.add_argument("--repo", required=True)
+    sp.add_argument("--memory")
+    sp.add_argument("--no-fix", dest="fix", action="store_false",
+                    help="report only; don't auto-gitignore the marker")
+    sp.set_defaults(func=cmd_doctor)
 
     for name, fn in (("push", cmd_push), ("pull", cmd_pull)):
         sp = sub.add_parser(name)

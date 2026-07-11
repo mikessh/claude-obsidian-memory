@@ -43,8 +43,9 @@ You can also just ask in natural language ("sync my memory to obsidian") — the
 /memory-link ~/vaults/personal/projects
 ```
 
-Writes `.claude/obsidian-sync.json` in the repo (the association marker), creates a per-repo
-subfolder in the vault, and pushes **one note per fact** plus a generated org kit:
+Writes `.claude/obsidian-sync.json` in the repo (the association marker — auto-gitignored),
+creates a per-repo subfolder in the vault, and pushes **one note per fact** plus a generated
+org kit:
 
 ```
 <vault-folder>/<repo>/
@@ -100,8 +101,9 @@ scripts/session-check.py          the hook body (silent unless the repo is linke
 INTEROP.md                        Obsidian feature/plugin recommendations (core Tier 1, opt-in Tier 2)
 ```
 
-`sync.py` subcommands: `init`, `status`, `push`, `pull`, `sync` (both directions at once),
-`archive` / `restore` (reversible trim, used by compress), `selftest`.
+`sync.py` subcommands: `init`, `doctor` (health-check an association — Full Disk Access,
+hash scheme, gitignore, index drift), `status`, `push`, `pull`, `sync` (both directions at
+once), `archive` / `restore` (reversible trim, used by compress), `selftest`.
 
 > **Upgrading `sync.py`:** the marker records a `hash_scheme`. If a new version changes how
 > content is hashed, `sync.py` **refuses to run** and tells you to re-baseline once — rather

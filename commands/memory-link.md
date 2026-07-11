@@ -12,7 +12,7 @@ Steps:
 2. Run the skill's `init` to write `.claude/obsidian-sync.json`, then `push` to populate the
    vault folder with one note per fact, the `CLAUDE.md` mirror, and the generated org kit
    (`memory.base` + `MEMORY.md` dashboard).
-3. If it's a git repo, ensure `.claude/obsidian-sync.json` is gitignored (it holds a
-   machine-local absolute vault path).
+3. Run `sync.py doctor --repo <repo_root>` to confirm the association is healthy (init already
+   gitignores the marker and checks vault access / Full Disk Access).
 
 If no vault path was given in $ARGUMENTS, ask for one.
