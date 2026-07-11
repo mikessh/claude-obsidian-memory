@@ -508,8 +508,12 @@ def cmd_doctor(args):
     else:
         add(None, "gitignore", "repo not under git — marker won't be committed anyway")
 
-    ok, reason = vault_readable(cfg["vault_dir"])
-    add(ok, "vault access", f"{cfg['vault_dir']} — {reason}")
+    # probe the per-repo SUBFOLDER (what the plugin actually reads/writes) — macOS TCC is
+    # per-path, so the subfolder can be fine even when listing the parent vault is blocked.
+    vdir = vault_repo_dir(cfg)
+    probe = vdir if vdir.exists() else Path(cfg["vault_dir"])
+    ok, reason = vault_readable(probe)
+    add(ok, "vault access", f"{probe} — {reason}")
     if ok and vault_root(cfg["vault_dir"]) is None:
         add(None, "vault root", "no .obsidian found up-tree — the Bases filter may use the wrong path")
 
