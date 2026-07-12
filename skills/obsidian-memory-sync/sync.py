@@ -525,6 +525,158 @@ def cmd_doctor(args):
         sys.exit(1)
 
 
+def discover_associations(roots):
+    """Find every repo association marker under `roots`. Read-only; dedupes repos
+    that share a memory dir (symlinked checkouts)."""
+    import os
+    out = []
+    for root in roots:
+        root = Path(os.path.expanduser(root))
+        if not root.exists():
+            continue
+        try:
+            markers = list(root.glob("**/.claude/obsidian-sync.json"))
+        except OSError:
+            continue
+        for m in markers:
+            try:
+                cfg = json.loads(m.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            out.append({"repo": m.parent.parent, "vault_dir": cfg["vault_dir"],
+                        "subdir": cfg["repo_subdir"], "memory_dir": Path(cfg["memory_dir"])})
+    seen = {}
+    for a in out:
+        seen.setdefault(str(a["memory_dir"]), a)
+    return list(seen.values())
+
+
+def vault_family(vault_dir):
+    parts = Path(vault_dir).parts
+    for key in ("academy", "industry", "personal", "old"):
+        if key in parts:
+            return key
+    return Path(vault_dir).name
+
+
+def _wikilinks(text):
+    return {m.strip() for m in re.findall(r"\[\[([^\]|#]+)", text)}
+
+
+def _tokens(subdir):
+    """Significant name tokens for clustering (drop years/version noise)."""
+    return {t for t in re.split(r"[-_\s]+", subdir.lower())
+            if t and not t.isdigit() and t not in ("ms", "client", "benchmark", "comparison", "iedb")}
+
+
+def cmd_audit(args):
+    """Vault-wide content audit: inventory, link hygiene, project clusters, and
+    cross-repo link gaps. Read-only. The judgment layer (skill) uses this to plan a
+    refactor. Scopes to the vault family of --repo unless --all."""
+    roots = args.roots or ["~/vcs", "~/work"]
+    assoc = discover_associations(roots)
+    if not assoc:
+        sys.exit(f"no associations found under {roots}")
+    fam = None if args.all else vault_family(load_config(Path(args.repo), require_scheme=False)["vault_dir"])
+    fams = {}
+    for a in assoc:
+        fams.setdefault(vault_family(a["vault_dir"]), []).append(a)
+
+    report = {}
+    for family, repos in sorted(fams.items()):
+        if fam and family != fam:
+            continue
+        # gather everyone's notes/text/links once
+        info = {}
+        stem_owner = {}
+        for a in repos:
+            notes = [p for p in a["memory_dir"].glob("*.md") if p.name != "MEMORY.md"] \
+                if a["memory_dir"].exists() else []
+            text = "\n".join(p.read_text() for p in notes)
+            cm = a["repo"] / "CLAUDE.md"
+            info[a["subdir"]] = {
+                "a": a, "notes": notes, "text": text,
+                "stems": {p.stem for p in notes},
+                "outlinks": _wikilinks(text),
+                "claude_md": cm.read_text() if cm.exists() else None,
+                "tokens": _tokens(a["subdir"]),
+            }
+            for s in info[a["subdir"]]["stems"]:
+                stem_owner[s] = a["subdir"]
+
+        # per-repo hygiene + cross-repo signals
+        per, gaps = {}, []
+        for sub, d in info.items():
+            inbound = {o for o, dd in info.items() if o != sub and (d["stems"] & dd["outlinks"])}
+            outbound = {stem_owner[s] for s in d["outlinks"] if s in stem_owner and stem_owner[s] != sub}
+            dangling = sorted(s for s in d["outlinks"] if s not in stem_owner)
+            orphans = sorted(p.stem for p in d["notes"]
+                             if not (_wikilinks(p.read_text()) & stem_owner.keys())
+                             and p.stem not in {s for o, dd in info.items() if o != sub for s in dd["outlinks"]})
+            cm = d["claude_md"]
+            wall = bool(cm) and len(cm) > 8000 and cm.count("\n## ") + cm.count("\n# ") < 6
+            per[sub] = {
+                "claude_md_chars": len(cm) if cm else 0,
+                "claude_md_headings": (cm.count("\n#") if cm else 0),
+                "wall": wall,
+                "facts": len(d["notes"]),
+                "orphans": orphans,
+                "dangling": dangling,
+                "links_out_to": sorted(outbound),
+                "links_in_from": sorted(inbound),
+            }
+            # textual cross-mention not yet linked
+            for other, od in info.items():
+                if other == sub or other in outbound:
+                    continue
+                if od["tokens"] and any(re.search(rf"\b{re.escape(t)}\b", d["text"], re.I) for t in od["tokens"]):
+                    gaps.append((sub, other))
+
+        # clusters by shared name token OR shared 3-char name prefix (catches
+        # tcren2/tcren-ms, vdjmatch/vdjtools/vdjdb families that share no full token)
+        clusters = {}
+        for sub, d in info.items():
+            keys = set(d["tokens"])
+            alpha = re.sub(r"[^a-z]", "", sub.lower())
+            if len(alpha) >= 3:
+                keys.add(alpha[:3] + "*")
+            for k in keys:
+                clusters.setdefault(k, set()).add(sub)
+        clusters = {t: sorted(v) for t, v in clusters.items() if len(v) > 1}
+        # collapse keys with identical member sets, preferring a real token over a prefix
+        by_members = {}
+        for t, v in clusters.items():
+            by_members.setdefault(tuple(v), []).append(t)
+        clusters = {sorted(ks, key=lambda k: ("*" in k, len(k)))[0]: list(v)
+                    for v, ks in by_members.items()}
+
+        report[family] = {"repos": sorted(info), "per": per, "gaps": sorted(set(gaps)), "clusters": clusters}
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return
+    for family, r in report.items():
+        print(f"\n{'='*66}\nVAULT: {family}  ({len(r['repos'])} repos)\n{'='*66}")
+        if r["clusters"]:
+            print("  clusters (shared name token):")
+            for t, subs in sorted(r["clusters"].items(), key=lambda kv: -len(kv[1])):
+                print(f"    {t:12} {', '.join(subs)}")
+        print("  repos:")
+        for sub in r["repos"]:
+            p = r["per"][sub]
+            cm = f"CLAUDE.md {p['claude_md_chars']}c/{p['claude_md_headings']}h" + (" ⚠WALL" if p["wall"] else "") if p["claude_md_chars"] else "no CLAUDE.md"
+            print(f"    ▸ {sub}")
+            print(f"        {cm} | {p['facts']} facts | links out→{p['links_out_to'] or '—'} in←{p['links_in_from'] or '—'}")
+            if p["orphans"]:
+                print(f"        orphans (no links): {', '.join(p['orphans'][:8])}" + (" …" if len(p['orphans']) > 8 else ""))
+            if p["dangling"]:
+                print(f"        dangling links: {', '.join(p['dangling'][:8])}" + (" …" if len(p['dangling']) > 8 else ""))
+        if r["gaps"]:
+            print("  cross-repo GAPS (A mentions B by name, not linked):")
+            for a, b in r["gaps"]:
+                print(f"    {a} → {b}")
+
+
 def do_push(repo, memory_dir, cfg, key, it):
     it["vault_path"].parent.mkdir(parents=True, exist_ok=True)
     if it["kind"] == "claude_md":
@@ -945,6 +1097,13 @@ def main():
     sp.add_argument("--no-fix", dest="fix", action="store_false",
                     help="report only; don't auto-gitignore the marker")
     sp.set_defaults(func=cmd_doctor)
+
+    sp = sub.add_parser("audit")
+    sp.add_argument("--repo", required=True, help="audit this repo's vault family")
+    sp.add_argument("--all", action="store_true", help="audit every vault, not just this repo's")
+    sp.add_argument("--roots", nargs="*", help="dirs to scan for associations (default ~/vcs ~/work)")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_audit)
 
     for name, fn in (("push", cmd_push), ("pull", cmd_pull)):
         sp = sub.add_parser(name)
