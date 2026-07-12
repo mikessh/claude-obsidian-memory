@@ -677,6 +677,140 @@ def cmd_audit(args):
                 print(f"    {a} → {b}")
 
 
+def _repo_summary(a):
+    """One-line descriptor: CLAUDE.md's first prose line, else the top fact's description."""
+    cm = a["repo"] / "CLAUDE.md"
+    if cm.exists():
+        for line in cm.read_text().splitlines():
+            s = line.strip()
+            if s and not s.startswith(("#", "---", "<!--", ">")):
+                return s[:160]
+    if a["memory_dir"].exists():
+        for p in sorted(a["memory_dir"].glob("*.md")):
+            if p.name == "MEMORY.md":
+                continue
+            d = fm_get(split_frontmatter(p.read_text())[0], "description")
+            if d:
+                return d[:160]
+    return "(no summary)"
+
+
+def _repo_facts(a):
+    """[(stem, type, description)] for a repo's facts, sorted by type then stem."""
+    out = []
+    if a["memory_dir"].exists():
+        for p in sorted(a["memory_dir"].glob("*.md")):
+            if p.name == "MEMORY.md":
+                continue
+            f = parse_repo_fact(p.read_text(), p.stem)
+            out.append((p.stem, eff_type(f), f["description"]))
+    return sorted(out, key=lambda t: (t[1], t[0]))
+
+
+def cmd_map(args):
+    """Generate the one-way 'Atlas' layer in <vault_root>/_maps/: a Map of Content,
+    a hub per project cluster, and a hub per repo (linking its condensed notes + cluster
+    siblings). Regenerable — index/link structure only, so re-running is safe. Reads an
+    optional <vault_root>/_maps/clusters.json to override the auto (name-token) clusters
+    with curated semantic ones: {"cluster name": ["repo-subdir", ...], ...}."""
+    roots = args.roots or ["~/vcs", "~/work"]
+    assoc = discover_associations(roots)
+    fam_want = None if args.all else vault_family(load_config(Path(args.repo), require_scheme=False)["vault_dir"])
+    fams = {}
+    for a in assoc:
+        fams.setdefault(vault_family(a["vault_dir"]), []).append(a)
+
+    for family, repos in sorted(fams.items()):
+        if fam_want and family != fam_want:
+            continue
+        by_sub = {a["subdir"]: a for a in repos}
+        vroot = vault_root(repos[0]["vault_dir"])
+        if vroot is None:
+            print(f"skip {family}: no .obsidian root found"); continue
+        maps = vroot / "_maps"
+        maps.mkdir(exist_ok=True)
+
+        # curated one-liners survive regeneration: _maps/summaries.json {subdir: "..."}
+        sfile = maps / "summaries.json"
+        summ = json.loads(sfile.read_text()) if sfile.exists() else {}
+
+        def summary(sub):
+            return summ.get(sub) or _repo_summary(by_sub[sub])
+
+        # clusters: curated file wins, else auto (shared token / 3-char prefix).
+        # a cluster value may be a plain list OR {"desc": "...", "repos": [...]}.
+        cdesc = {}
+        spec = maps / "clusters.json"
+        if spec.exists():
+            clusters = {}
+            for k, v in json.loads(spec.read_text()).items():
+                repos = v["repos"] if isinstance(v, dict) else v
+                if isinstance(v, dict) and v.get("desc"):
+                    cdesc[k] = v["desc"]
+                clusters[k] = [s for s in repos if s in by_sub]
+        else:
+            clusters = {}
+            for sub, a in by_sub.items():
+                keys = _tokens(sub) | ({re.sub(r"[^a-z]", "", sub.lower())[:3] + "*"} if len(sub) >= 3 else set())
+                for k in keys:
+                    clusters.setdefault(k, []).append(sub)
+            clusters = {k: sorted(set(v)) for k, v in clusters.items() if len(set(v)) > 1}
+        clustered = {s for subs in clusters.values() for s in subs}
+        singletons = sorted(set(by_sub) - clustered)
+
+        def cluster_of(sub):
+            return next((c for c, subs in clusters.items() if sub in subs), None)
+
+        # --- repo hubs ---
+        for sub, a in sorted(by_sub.items()):
+            sibs = [s for s in clusters.get(cluster_of(sub) or "", []) if s != sub]
+            facts = _repo_facts(a)
+            L = [f"---\ntype: map\nrepo: {sub}\ntags: [memory, map]\n---", "",
+                 f"# {sub}", "", f"> {summary(sub)}", ""]
+            c = cluster_of(sub)
+            if c:
+                L.append(f"**Cluster:** [[{c}]]" + (f" · siblings: " + " ".join(f"[[{s}]]" for s in sibs) if sibs else ""))
+            if (maps / f"{sub} — guide.md").exists():
+                L.append(f"**Guide:** [[{sub} — guide]] (unwrapped, human-readable)")
+            if (a["repo"] / "CLAUDE.md").exists():
+                L.append(f"**Project context:** see the condensed `CLAUDE.md` mirror in this repo's vault folder.")
+            L += ["", "## Facts", ""]
+            cur = None
+            for stem, t, desc in facts:
+                if t != cur:
+                    L.append(f"### {t}"); cur = t
+                L.append(f"- [[{stem}]]" + (f" — {desc}" if desc else ""))
+            if not facts:
+                L.append("*(no memory facts yet)*")
+            (maps / f"{sub}.md").write_text("\n".join(L) + "\n")
+
+        # --- cluster hubs ---
+        for c, subs in sorted(clusters.items()):
+            L = [f"---\ntype: map\ntags: [memory, map, cluster]\n---", "", f"# {c}", "",
+                 f"> {cdesc.get(c, 'Project cluster. Members cross-link below.')}", "", "## Projects", ""]
+            for sub in subs:
+                L.append(f"- [[{sub}]] — {summary(sub)}")
+            (maps / f"{c}.md").write_text("\n".join(L) + "\n")
+
+        # --- Map of Content ---
+        L = [f"---\ntype: map\ntags: [memory, map, moc]\n---", "", f"# {family} — Map of Content", "",
+             "> Auto-generated navigation for the Claude-memory mirror. Hubs link the **condensed**",
+             "> fact notes (which round-trip to each repo). `map` rewrites these hubs, so curate the",
+             "> one-liners in `_maps/summaries.json` and clusters/descriptions in `_maps/clusters.json`;",
+             "> re-running preserves them. Hand-written `<repo> — guide.md` notes are never overwritten.", ""]
+        if clusters:
+            L += ["## Clusters", ""]
+            for c, subs in sorted(clusters.items()):
+                L.append(f"- **[[{c}]]** — " + " ".join(f"[[{s}]]" for s in subs))
+        if singletons:
+            L += ["", "## Standalone", ""]
+            for s in singletons:
+                L.append(f"- [[{s}]] — {summary(s)}")
+        (maps / f"{family}.md").write_text("\n".join(L) + "\n")
+
+        print(f"{family}: wrote _maps/ ({len(by_sub)} repo hubs, {len(clusters)} clusters) at {maps}")
+
+
 def do_push(repo, memory_dir, cfg, key, it):
     it["vault_path"].parent.mkdir(parents=True, exist_ok=True)
     if it["kind"] == "claude_md":
@@ -1055,6 +1189,14 @@ def selftest():
         assert str(CONFIG_REL) in (repo3 / ".gitignore").read_text(), "marker auto-gitignored"
         assert ensure_gitignored(repo3).startswith("marker already"), "gitignore is idempotent"
 
+        # map: generates the Atlas from discovered associations (scope to this repo only)
+        a3.all = False; a3.roots = [str(repo3.parent)]
+        with quiet(): cmd_map(a3)
+        vr = vault_root(load_config(repo3)["vault_dir"])
+        moc = vr / "_maps" / (vault_family(str(vr)) + ".md")
+        assert moc.exists() and "Map of Content" in moc.read_text(), "map wrote a MOC"
+        assert (vr / "_maps" / f"{load_config(repo3)['repo_subdir']}.md").exists(), "map wrote a repo hub"
+
         # doctor: readable vault passes; a permission-blocked vault fails with FDA guidance
         a3.fix = True
         with quiet(): cmd_doctor(a3)   # readable fake vault -> no FAIL, no SystemExit
@@ -1104,6 +1246,12 @@ def main():
     sp.add_argument("--roots", nargs="*", help="dirs to scan for associations (default ~/vcs ~/work)")
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_audit)
+
+    sp = sub.add_parser("map")
+    sp.add_argument("--repo", required=True, help="generate the Atlas for this repo's vault family")
+    sp.add_argument("--all", action="store_true", help="every vault, not just this repo's")
+    sp.add_argument("--roots", nargs="*", help="dirs to scan for associations (default ~/vcs ~/work)")
+    sp.set_defaults(func=cmd_map)
 
     for name, fn in (("push", cmd_push), ("pull", cmd_pull)):
         sp = sub.add_parser(name)
