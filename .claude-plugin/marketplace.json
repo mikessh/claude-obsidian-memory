@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-obsidian-memory",
-  "description": "Bridge Claude Code's per-repo memory into an Obsidian vault: two-way sync, cross-linking, and a core-Obsidian organization kit.",
+  "description": "Bridge a repo's Claude Code memory into an Obsidian vault: two-way per-fact sync, a core Bases dashboard, health-check (doctor) + reversible compaction, and a vault-wide Atlas that cross-links your projects.",
   "owner": {
     "name": "Mikhail Shugay"
   },
   "plugins": [
     {
       "name": "claude-obsidian-memory",
-      "description": "Associate a repo with an Obsidian vault folder, mirror its Claude memory + CLAUDE.md two-way, cross-link and organize.",
+      "description": "Bridge a repo's Claude Code memory into an Obsidian vault: two-way per-fact sync, a core Bases dashboard, health-check (doctor) + reversible compaction, and a vault-wide Atlas that cross-links your projects.",
       "source": "./",
       "category": "knowledge-management"
     }

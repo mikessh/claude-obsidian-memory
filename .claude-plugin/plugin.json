@@ -1,7 +1,7 @@
 {
   "name": "claude-obsidian-memory",
-  "version": "0.6.0",
-  "description": "Mirror a repo's Claude Code memory (MEMORY.md + memory/*.md + CLAUDE.md) into an Obsidian vault folder, two-way synced, with cross-linking and a core-Obsidian org kit (Base + dashboard).",
+  "version": "0.6.1",
+  "description": "Bridge a repo's Claude Code memory into an Obsidian vault: two-way per-fact sync, a core Bases dashboard, health-check (doctor) + reversible compaction, and a vault-wide Atlas that cross-links your projects.",
   "author": {
     "name": "Mikhail Shugay"
   },
