@@ -101,9 +101,9 @@ scripts/session-check.py          the hook body (silent unless the repo is linke
 INTEROP.md                        Obsidian feature/plugin recommendations (core Tier 1, opt-in Tier 2)
 ```
 
-`sync.py` subcommands: `init`, `doctor` (health-check an association — Full Disk Access,
-hash scheme, gitignore, index drift), `status`, `push`, `pull`, `sync` (both directions at
-once), `archive` / `restore` (reversible trim, used by compress), `selftest`.
+`sync.py` subcommands: `init`, `doctor` (health-check), `audit` (vault-wide content report),
+`map` (generate the `_maps/` Atlas; `--enrich` cross-links facts), `status`, `push`, `pull`,
+`sync`, `archive` / `restore` (reversible trim), `selftest`.
 
 > **Upgrading `sync.py`:** the marker records a `hash_scheme`. If a new version changes how
 > content is hashed, `sync.py` **refuses to run** and tells you to re-baseline once — rather

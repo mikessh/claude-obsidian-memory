@@ -810,6 +810,49 @@ def cmd_map(args):
 
         print(f"{family}: wrote _maps/ ({len(by_sub)} repo hubs, {len(clusters)} clusters) at {maps}")
 
+        if getattr(args, "enrich", False):
+            enrich_facts(by_sub, apply=getattr(args, "apply", False))
+
+
+def enrich_facts(by_sub, apply=False):
+    """Add a '**Related projects:**' footer to each fact whose body names another
+    repo in the same vault, linking that repo's Atlas hub. Idempotent (re-run replaces
+    the footer). Modifies repo memory only — a subsequent `push` mirrors it to the vault.
+    Dry-run unless apply=True. In-context, non-destructive (appends, never rewrites prose)."""
+    # match a repo by its exact subdir, plus a couple of obvious short aliases
+    alias = {"tcren2": "2026-tcren2", "aldan3": "aldan3-client"}
+    term2hub = {s.lower(): s for s in by_sub}
+    term2hub.update({a: h for a, h in alias.items() if h in by_sub})
+    changed, preview = 0, []
+    for sub, a in sorted(by_sub.items()):
+        if not a["memory_dir"].exists():
+            continue
+        for p in sorted(a["memory_dir"].glob("*.md")):
+            if p.name == "MEMORY.md":
+                continue
+            raw = p.read_text()
+            f = parse_repo_fact(raw, p.stem)
+            body = re.sub(r"\n*\*\*Related projects:\*\*.*(?:\n|$)", "", f["body"]).rstrip()
+            hubs = set()
+            for term, hub in term2hub.items():
+                if hub == sub:
+                    continue
+                if re.search(rf"(?<![\w-]){re.escape(term)}(?![\w-])", body, re.I):
+                    hubs.add(hub)
+            new_body = body + ("\n\n**Related projects:** " + " ".join(f"[[{h}]]" for h in sorted(hubs)) if hubs else "")
+            if new_body.strip() != f["body"].strip():
+                changed += 1
+                if hubs:
+                    preview.append(f"    {sub}/{p.stem} → {', '.join(sorted(hubs))}")
+                if apply:
+                    p.write_text(build_repo_fact({**f, "body": new_body}, raw))
+    print(f"  enrich: {'applied to' if apply else 'would touch'} {changed} facts"
+          + ("" if apply else " (dry-run; pass --apply to write, then `push`)"))
+    for line in preview[:40]:
+        print(line)
+    if len(preview) > 40:
+        print(f"    … +{len(preview) - 40} more")
+
 
 def do_push(repo, memory_dir, cfg, key, it):
     it["vault_path"].parent.mkdir(parents=True, exist_ok=True)
@@ -1251,6 +1294,8 @@ def main():
     sp.add_argument("--repo", required=True, help="generate the Atlas for this repo's vault family")
     sp.add_argument("--all", action="store_true", help="every vault, not just this repo's")
     sp.add_argument("--roots", nargs="*", help="dirs to scan for associations (default ~/vcs ~/work)")
+    sp.add_argument("--enrich", action="store_true", help="also add Related-projects cross-links into facts (dry-run)")
+    sp.add_argument("--apply", action="store_true", help="with --enrich: actually write the fact footers")
     sp.set_defaults(func=cmd_map)
 
     for name, fn in (("push", cmd_push), ("pull", cmd_pull)):

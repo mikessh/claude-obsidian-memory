@@ -132,6 +132,30 @@ revertable with one `git checkout`; `git diff` is also the cleanest way to revie
 The tool itself stays git-agnostic (undo is `restore` + `push --force`); a sandboxed/iCloud
 vault may block git access anyway, so this is a user habit, not something to automate.
 
+## Organize a whole vault — audit, Atlas, cross-links
+
+For "organize my vault", "make an audit", "cross-link the projects", "map of content". These
+operate **across all repos** mirrored into one vault (discovered under `~/vcs` `~/work`), not
+just the current repo.
+
+- `python3 <skill>/sync.py audit --repo <R>` — read-only vault report: per-repo CLAUDE.md size
+  (flags unsectioned **walls**), fact counts, **orphan** notes, **dangling** links, the existing
+  cross-repo link graph, project **clusters**, and cross-repo link **gaps**. Start here.
+- `python3 <skill>/sync.py map --repo <R>` — generate the one-way **Atlas** in `<vault>/_maps/`:
+  a Map of Content + a hub per cluster + a hub per repo (linking its condensed notes + siblings).
+  Never synced back; the condensed per-repo notes stay untouched. Curate quality in two data
+  files the generator reads (so regeneration preserves it): `_maps/clusters.json`
+  (`{cluster: {desc, repos}}`) and `_maps/summaries.json` (`{repo: one-liner}`).
+- `python3 <skill>/sync.py map --repo <R> --enrich` — dry-run the fact cross-linking; add
+  `--apply` to write a `**Related projects:**` footer into each fact that names a sibling repo
+  (idempotent, non-destructive; modifies repo memory, so `push` afterwards to mirror).
+- **Unwrap a wall**: for a big `CLAUDE.md`, hand-write `<vault>/_maps/<repo> — guide.md` — a
+  readable, sectioned, cross-linked digest. `map` links it from the repo hub and never
+  overwrites it (that's the "condensed mirror + unwrapped guide" split).
+
+The condensed layer (round-tripped `CLAUDE.md.md` + fact notes) is the source of truth and is
+never reformatted; the Atlas is the human-readable presentation on top.
+
 ## Analyse / cross-link (on request, or after a sync with real changes)
 
 Judgment, not scripted. Glob the vault folder (and loosely, sibling notes one level up) for
